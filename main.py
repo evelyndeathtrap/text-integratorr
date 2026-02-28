@@ -1,43 +1,45 @@
-from collections import defaultdict, Counter
+  GNU nano 7.2                                          p.py *                                                 
 import random
+from collections import defaultdict, Counter
+import time
+# 1. Configuration
+CONTEXT_SIZE = 500  # Higher = more coherent, but requires more training text
+PREDICTIONS = 150
 
-# 1. Training Text
+# 2. Load and Tokenize
 try:
     with open("chat.txt", "r") as f:
-        text = f.read()
+        tokens = f.read().split()
 except FileNotFoundError:
-    print("Please create 'chat.txt' first.")
-    exit()
+    tokens = "the quick brown fox jumps over the lazy dog".split()
 
-# 2. Tokenization
-tokens = text.split()
+# 3. Build Multi-level Model (Backoff)
+# We store counts for all context sizes from 1 up to CONTEXT_SIZE
+models = [defaultdict(Counter) for _ in range(CONTEXT_SIZE + 1)]
 
-# 3. Build the Bigram Model
-bigram_counts = defaultdict(Counter)
-for i in range(len(tokens) - 1):
-    bigram_counts[tokens[i]][tokens[i+1]] += 1
+for i in range(len(tokens)):
+    for n in range(1, CONTEXT_SIZE + 1):
+        if i + n < len(tokens):
+            context = tuple(tokens[i:i+n])
+            next_token = tokens[i+n]
+            models[n][context][next_token] += 1
 
-# 4. Improved Prediction: Probabilistic Sampling
-def predict_next_word(current_word):
-    if current_word in bigram_counts:
-        choices = bigram_counts[current_word]
-        # Instead of most_common(1), we pick based on frequency weights
-        words = list(choices.keys())
-        weights = list(choices.values())
-        return random.choices(words, weights=weights)[0]
-    else:
-        # Fallback to random word if dead end
-        return random.choice(tokens)
+def predict_with_backoff(current_sequence):
+    # Try the longest context first, then shrink if not found
+    for n in range(CONTEXT_SIZE, 0, -1):
+        context = tuple(current_sequence[-n:])
+        if context in models[n]:
+            choices = models[n][context]
+            return random.choices(list(choices.keys()), weights=list(choices.values()))[0]
+    
+    # Absolute fallback: random word from the whole corpus
+    return random.choice(tokens)
 
-# Generate a sequence
-current = "the"
-generated_sequence = [current]
-print(f"Sequence: {current}", end=" ")
+# 4. Generate Long Context String
+# Start with the first CONTEXT_SIZE words
+output = tokens[:CONTEXT_SIZE]
 
-for _ in range(256):
-    next_w = predict_next_word(current)
-    print(f"-> {next_w}", end=" ")
-    generated_sequence.append(next_w)
-    current = next_w
-
-print("\n")
+while True:
+    next_word = predict_with_backoff(output)
+    print(next_word, end=" ", flush=True)
+    time.sleep(1)
